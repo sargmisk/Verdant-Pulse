@@ -1,5 +1,4 @@
-;; Community Watershed Protection Smart Contract (Enhanced Version)
-;; Added site condition tracking, validation functions, and pause mechanisms
+;; Community Watershed Protection Smart Contract (Full Feature)
 
 ;; Error Constants
 (define-constant ERR-NOT-AUTHORIZED (err u100))
@@ -10,12 +9,14 @@
 (define-constant ERR-PROGRAM-PAUSED (err u105))
 (define-constant ERR-DONATION-INVALID (err u106))
 (define-constant ERR-CONDITION-CODE-INVALID (err u107))
+(define-constant ERR-INVALID-COORDINATOR-ADDRESS (err u108))
 
 ;; Core Program Variables
 (define-data-var watershed-coordinator principal tx-sender)
 (define-data-var conservation-fund uint u0)
 (define-data-var program-is-active bool true)
 (define-data-var donation-minimum uint u1000000) ;; 1 STX
+(define-data-var emergency-mode-active bool false)
 
 ;; Data Storage
 (define-map conservation-sites 
@@ -54,7 +55,7 @@
 )
 
 (define-read-only (check-program-status)
-    (var-get program-is-active)
+    (and (var-get program-is-active) (not (var-get emergency-mode-active)))
 )
 
 ;; Helper Functions
@@ -92,6 +93,13 @@
         (is-eq condition-code "in-progress")
         (is-eq condition-code "degraded")
         (is-eq condition-code "stabilized")
+    )
+)
+
+(define-private (can-be-coordinator (candidate-address principal))
+    (and 
+        (not (is-eq candidate-address (var-get watershed-coordinator)))
+        (not (is-eq candidate-address (as-contract tx-sender)))
     )
 )
 
@@ -175,6 +183,22 @@
     )
 )
 
+(define-public (set-emergency-mode-on)
+    (begin
+        (asserts! (is-coordinator) ERR-NOT-AUTHORIZED)
+        (var-set emergency-mode-active true)
+        (ok true)
+    )
+)
+
+(define-public (set-emergency-mode-off)
+    (begin
+        (asserts! (is-coordinator) ERR-NOT-AUTHORIZED)
+        (var-set emergency-mode-active false)
+        (ok true)
+    )
+)
+
 (define-public (update-site-condition (site-address principal) (new-condition (string-ascii 20)))
     (begin
         (asserts! (is-coordinator) ERR-NOT-AUTHORIZED)
@@ -204,7 +228,7 @@
 (define-public (change-coordinator (new-coordinator-address principal))
     (begin
         (asserts! (is-coordinator) ERR-NOT-AUTHORIZED)
-        (asserts! (not (is-eq new-coordinator-address (var-get watershed-coordinator))) ERR-NOT-AUTHORIZED)
+        (asserts! (can-be-coordinator new-coordinator-address) ERR-INVALID-COORDINATOR-ADDRESS)
         (var-set watershed-coordinator new-coordinator-address)
         (ok true)
     )
